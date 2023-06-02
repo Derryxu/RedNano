@@ -6,6 +6,16 @@ RedNano for detecting RNA m6A modification using nanopore direct RNA sequencing 
 
 <img src="./RedNano.png" alt="RedNano" width=1000 height="whatever">
 
+# Contents
+- [Installation](#installation)
+    - [Clone repository](#clone-repository)
+    - [Install dependencies](#install-dependencies)
+- [Usage](#usage)
+    - [Preproccess](#preproccess)
+    - [Feature extraction](#feature-extraction)
+    - [Predicting m6A site](#predicting-m6a-site)
+    - [Trainning model](#trainning-model)
+- [Publication](#publication)
 
 # Installation
 
