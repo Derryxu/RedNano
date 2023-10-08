@@ -1,8 +1,6 @@
 # RedNano
 
-
-RedNano for detecting RNA m6A modification using nanopore direct RNA sequencing data. RedNano combines raw current signals and basecalling error features for detecting RNA m6A modification using nanopore direct RNA sequencing (DRS) data. RedNano designs different coding approaches and employs two different types of neural networks, bidirectional long short-term memory network and deep residual network, to capture information based on the unique characteristics of each feature. RedNano can accurately detect m6A modification sites at read and genome levels.
-
+RedNano is a deep-learning method that utilizes both raw signals and basecalling errors to detect m6A from Nanopore DRS reads.
 
 <img src="./RedNano.png" alt="RedNano" width=1000 height="whatever">
 
