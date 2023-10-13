@@ -146,9 +146,7 @@ CUDA_VISIBLE_DEVICES=5 python scripts/predict.py --test_option 0 --test_file tes
 | chrom | pos  | alignstrand | loc_in_ref | readname | strand | k_mer | pred |
 | ----- | ---- | ----------- | ---------- | -------- | ------ | ----- | ---- |
 
-* The reads prediction modification probabilities are processed to calculate the predicted probability of genome level site m6 modifications
-
-  公式mathtype
+* The reads prediction modification probabilities are processed to calculate the predicted probability of genome level
 
   
 
