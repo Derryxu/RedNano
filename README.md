@@ -5,6 +5,8 @@ RedNano is a deep-learning method that utilizes both raw signals and basecalling
 <img src="./RedNano.png" alt="RedNano" width=1000 height="whatever">
 
 # Contents
+- [RedNano](#rednano)
+- [Contents](#contents)
 - [Installation](#installation)
     - [Clone repository](#clone-repository)
     - [Install dependencies](#install-dependencies)
@@ -127,18 +129,21 @@ The output feature file consists of one sample per row in the format shown below
 
 ### Predicting m6A site
 
-* Use `-test_option` to specify test file(s).
+* Use `--test_option` to specify test file(s).
 
-  [0]  `-test_file `:sigle test file 
+  [0]  `--test_file `:sigle test file 
 
-  [1]  `-test_file_dir`: folder containing multiple test files
+  [1]  `--test_file_dir`: folder containing multiple test files
 
-* Use `-model` to specify the checkpoint file while training model from checkpoints.
+* Use `--model` to specify the checkpoint file while training model from checkpoints.
+
+* Check pre-trained models from [/models](/models): 
+  * [_pretrained_allspecies_model_states.pt_](/models/pretrained_allspecies_model_states.pt): Pre-trained RNA DRACH m6A model using sysnthetic, human, and _Arabidopsis_ data.
 
 ```shell
 
 # --model 
-CUDA_VISIBLE_DEVICES=5 python scripts/predict.py --test_option 0 --test_file test/test.txt --model test/model/early_stopping_model_states.pt --seq_lens 5 --signal_lens 65 --batch_size 512 --rnn_hid 128 --hidden_size 512 --dropout_rate 0.5 --embedding_size 4 --output_file_dir test/results/ --num_workers 2
+CUDA_VISIBLE_DEVICES=0 python scripts/predict.py --test_option 0 --test_file test/test.txt --model models/pretrained_allspecies_model_states.pt --seq_lens 5 --signal_lens 65 --batch_size 512 --rnn_hid 128 --hidden_size 512 --dropout_rate 0.5 --embedding_size 4 --output_file_dir test/results/ --num_workers 2
 ```
 
 * Output: Modified predicted probability file for the level of readings in the format shown below:
