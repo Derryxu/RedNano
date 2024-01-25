@@ -10,12 +10,12 @@ RedNano is a deep-learning method that utilizes both raw signals and basecalling
 - [Installation](#installation)
     - [Clone repository](#clone-repository)
     - [Install dependencies](#install-dependencies)
+- [Demo data](#demo-data)
 - [Usage](#usage)
     - [Preproccess](#preproccess)
     - [Feature extraction](#feature-extraction)
     - [Predicting m6A site](#predicting-m6a-site)
     - [Trainning model](#trainning-model)
-- [Publication](#publication)
 
 # Installation
 
@@ -49,7 +49,17 @@ Following list shows the main environmental dependencies, please make sure the d
 |tqdm | 4.62.3|
 |scikit-learn | 0.19.2|
 
+Other necessary tools used:
+- [Guppy (v3.1.5)](https://community.nanoporetech.com/getting_started)
+- [jvarkit](https://github.com/lindenb/jvarkit)
 
+# Demo data
+Check [demo](/demo) to get some demo data:
+  - _fast5_: fast5 files.
+  - _cc.fasta_: reference transcriptome.
+  - _cc.bed_: reference transcriptome length file with a header.
+
+All the demo data are downloaded from the [Liu et al.-Nat Comm-2019](https://www.nature.com/articles/s41467-019-11713-9) paper.
 
 # Usage
 
@@ -57,20 +67,21 @@ This section highlights the main functionalities of RedNano and the commands to 
 
 ### Preproccess
 
-1. **Converts multi read FAST5 file(s) into single read FAST5 files.**
+1. **Converts multi read FAST5 file(s) into single read FAST5 files if necessary.**
 
    When the downloaded Fast5 file(s) of raw nanopore sequencing reads contains multiple reads-id, use ont_fast5_api to split the multiple read Fast5 file(s) into single read Fast5 files.
 
 ```shell
-multi_to_single_fast5 -i fast5/ -s fast5_single --recursive -t 30
+multi_to_single_fast5 -i /path/to/fast5/ -s /path/to/fast5_single --recursive -t 30
 ```
 
 2. **Basecalling using guppy (v3.1.5)**
 
 ```shell
-guppy_basecaller -i fast5_single/ -r -s fast5_guppy --fast5_out -c rna_r9.4.1_70bps_hac.cfg --gpu_runners_per_device 2 --chunks_per_runner 2500 --device CUDA:0
+guppy_basecaller -i /path/to/fast5/ -r -s /path/to/fast5_guppy --fast5_out -c rna_r9.4.1_70bps_hac.cfg --gpu_runners_per_device 2 --chunks_per_runner 2500 --device CUDA:0
 
-cat *.fastq > test.fastq
+# Merge all fastq files into one file, use poretools or nanopolish to extract the fastq files from fast5 files first if necessary
+cat /path/to/fast5_guppy/*.fastq > test.fastq
 ```
 
 3. **resquiggle raw signals**
@@ -78,17 +89,17 @@ cat *.fastq > test.fastq
    The tombo (v1.5.1) resquiggle referance.transcript.fa should not be genome file, it should be the referance gene fasta file.
 
 ```shell
-tombo resquiggle --overwrite fast5_guppy/workspace/ --basecall-group Basecall_1D_001 referance.transcript.fa --fit-global-scale --include-event-stdev --corrected-group RawGenomeCorrected_001 --processes 30
+tombo resquiggle --overwrite /path/to/fast5_guppy/workspace/ --basecall-group Basecall_1D_001 referance.transcript.fa --fit-global-scale --include-event-stdev --corrected-group RawGenomeCorrected_001 --processes 30
 ```
 
 4. **Map reads to reference transcriptome**
 
    Map the nanopore reads to reference transcriptome  using minimap2 (v2.17-r941)
 
-   Convert the output BAM format files to TSV format files using samtools (v1.7) and sam2tsv 
+   Convert the output BAM format files to TSV format files using samtools (v1.7) and sam2tsv (of jvarkit) 
 
 ```shell
-minimap2 -t 30 -ax map-ont referance.transcript.fa fast5_guppy/test.fastq | samtools view -hSb | samtools sort -@ 30 -o test.bam
+minimap2 -t 30 -ax map-ont /path/to/referance.transcript.fa /test.fastq | samtools view -hSb | samtools sort -@ 30 -o test.bam
 samtools index test.bam
 samtools view -h -F 3844 test.bam | java -jar sam2tsv.jar -r referance.transcript.fa > test.tsv
 ```
@@ -109,7 +120,7 @@ With the data ready, we can now extract the combined features from the reads.
 
 * Use `-s` to specify raw signals length.
 
-* Use `-b` to specify transcriptome length file, for example:
+* Use `-b` to specify transcriptome length file with a header, for example:
 
   | ID                 | length |
   | ------------------ | ------ |
@@ -117,8 +128,8 @@ With the data ready, we can now extract the combined features from the reads.
 
 ```shell
 # Current directory: RedNano/
-# Output folder: mkdir test/features/
-python scripts/extract_features.py -i test/fast5_guppy/workspace/ -o test/features/ --errors_dir test/tmp/ --corrected_group RawGenomeCorrected_001 -b test/ referance.transcript.bed --w_is_dir 1 -k 5 -s 65 -n 30
+# Output folder: mkdir -p test/features/
+python scripts/extract_features.py -i /path/to/fast5_guppy/workspace/ -o test/features/ --errors_dir test/tmp/ --corrected_group RawGenomeCorrected_001 -b test/referance.transcript.bed --w_is_dir 1 -k 5 -s 65 -n 30
 ```
 
 The output feature file consists of one sample per row in the format shown below:
@@ -168,8 +179,3 @@ awk -v OFS="\t" '{print $0, 1}' mod_features.txt > mod_features_labeled.txt
 ```shell
 CUDA_VISIBLE_DEVICES=0 python scripts/train.py --train_option 0 --train_file test/train.txt --valid_file test/valid.txt --epochs 50 --patience 5 --signal_lens 65 --batch_size 512 --rnn_hid 128 --hidden_size 512 --dropout_rate 0.5 --clip_grad 0.5 --lr 1e-4 --weight_decay 1e-5 --embedding_size 4 --num_workers 2 --model_type basecall --save_dir test/results/ --seq_lens 5
 ```
-
-
-
-# Publication
-
