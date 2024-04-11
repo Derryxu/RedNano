@@ -132,4 +132,3 @@ dependencies:
     - toolz==0.12.0
     - ujson==5.5.0
     - xgboost==0.80
-prefix: /home/xujr/tools/miniconda3/envs/RedNano
