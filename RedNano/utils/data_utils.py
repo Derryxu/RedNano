@@ -10,8 +10,9 @@ import os
 import fnmatch
 from itertools import product
 import torch
-from utils.MyDataSet import MyDataSet_train, MyDataSet, MyDataSet_val
+# from utils.MyDataSet import MyDataSet_train, MyDataSet, MyDataSet_val
 from torch.utils.data import Dataset, DataLoader
+from utils.MyDataSet_txt import MyDataSetTxt
 
 def get_fast5_files(fast5_dir, is_recursive=True):
     fast5_dir = os.path.abspath(fast5_dir) # get abs directoty
@@ -69,7 +70,7 @@ def base_embedding():
     return
 
 def dataloader_split(features_file, device, batch_size=128):
-    dataset = MyDataSet(features_file)
+    dataset = MyDataSetTxt(features_file)
     print("dataset len", len(dataset))
     print("dataloader batch size ", batch_size)
     train_size = int(len(dataset) * 0.8)

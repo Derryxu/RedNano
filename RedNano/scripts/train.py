@@ -42,7 +42,7 @@ def get_accuracy(y_true, y_pred):
             pred[i] = 1
     return accuracy_score(y_true, pred)
 
-def train_epoch(model, train_dl, optimizer, loss_func, kmer_beg, kmer_end, clip_grad=None):
+def train_epoch(model, train_dl, optimizer, loss_func, kmer_begr, kmer_endr, kmer_bege, kmer_ende, clip_grad=None):
     print("train epoch")
     model.train()
     train_loss_list = []
@@ -50,16 +50,23 @@ def train_epoch(model, train_dl, optimizer, loss_func, kmer_beg, kmer_end, clip_
     all_y_pred = []
     loss_results = {}
     for batch_features_all in tqdm(train_dl):
-        sampleinfo, kmer, base_means, base_median, base_stds, base_signal_lens, signals, qual, mis, ins, dele, labels = \
-            batch_features_all[0], batch_features_all[1][:, kmer_beg:kmer_end].cuda(), batch_features_all[2][:, kmer_beg:kmer_end].cuda(), \
-            batch_features_all[3][:,kmer_beg:kmer_end].cuda(), \
-            batch_features_all[4][:, kmer_beg:kmer_end].cuda(), batch_features_all[5][:, kmer_beg:kmer_end].cuda(), \
-            batch_features_all[6][:, kmer_beg:kmer_end, :].cuda(), batch_features_all[7][:, kmer_beg:kmer_end].cuda(), \
-            batch_features_all[8][:, kmer_beg:kmer_end].cuda(), \
-            batch_features_all[9][:, kmer_beg:kmer_end].cuda(), batch_features_all[10][:, kmer_beg:kmer_end].cuda(), batch_features_all[11].cuda()
+        sampleinfo, kmere, base_means, base_median, base_stds, base_signal_lens, kmerr, signals, qual, mis, ins, dele, labels = \
+            batch_features_all[0], \
+            batch_features_all[1][:, kmer_bege:kmer_ende].cuda(), \
+            batch_features_all[2][:, kmer_bege:kmer_ende].cuda(), \
+            batch_features_all[3][:,kmer_bege:kmer_ende].cuda(), \
+            batch_features_all[4][:, kmer_bege:kmer_ende].cuda(), \
+            batch_features_all[5][:, kmer_bege:kmer_ende].cuda(), \
+            batch_features_all[1][:, kmer_begr:kmer_endr].cuda(), \
+            batch_features_all[6][:, kmer_begr:kmer_endr, :].cuda(), \
+            batch_features_all[7][:, kmer_bege:kmer_ende].cuda(), \
+            batch_features_all[8][:, kmer_bege:kmer_ende].cuda(), \
+            batch_features_all[9][:, kmer_bege:kmer_ende].cuda(), \
+            batch_features_all[10][:, kmer_bege:kmer_ende].cuda(),\
+            batch_features_all[11].cuda()
 
         y_true = labels.flatten()
-        y_pred = model(kmer, base_means, base_median, base_stds, base_signal_lens, signals, qual, mis, ins, dele)
+        y_pred = model(kmere, kmerr, base_means, base_median, base_stds, base_signal_lens, signals, qual, mis, ins, dele)
         y_pred = y_pred.squeeze(-1)
         loss = loss_func(y_pred.to(torch.float), y_true.to(torch.float))  # sigmoid
         loss.backward()
@@ -88,7 +95,7 @@ def train_epoch(model, train_dl, optimizer, loss_func, kmer_beg, kmer_end, clip_
     return loss_results
 
 
-def val_epoch(model, val_dl, loss_func, kmer_beg, kmer_end, n_iters=1):
+def val_epoch(model, val_dl, loss_func, kmer_begr, kmer_endr, kmer_bege, kmer_ende, n_iters=1):
     print("val epoch")
     model.eval()
     all_y_true = None
@@ -101,18 +108,23 @@ def val_epoch(model, val_dl, loss_func, kmer_beg, kmer_end, n_iters=1):
             y_pred_tmp = []
             for batch_features_all in tqdm(val_dl):
                 # for i, batch_features_all in enumerate(val_dl):
-                sampleinfo, kmer, base_means, base_median, base_stds, base_signal_lens, signals, qual, mis, ins, dele, labels = \
-                    batch_features_all[0], batch_features_all[1][:, kmer_beg:kmer_end].cuda(), batch_features_all[2][:, kmer_beg:kmer_end].cuda(), \
-                    batch_features_all[3][:, kmer_beg:kmer_end].cuda(), \
-                    batch_features_all[4][:, kmer_beg:kmer_end].cuda(), batch_features_all[5][:, kmer_beg:kmer_end].cuda(), \
-                    batch_features_all[6][:, kmer_beg:kmer_end, :].cuda(), batch_features_all[7][:, kmer_beg:kmer_end].cuda(), \
-                    batch_features_all[8][:, kmer_beg:kmer_end].cuda(), \
-                    batch_features_all[9][:, kmer_beg:kmer_end].cuda(), batch_features_all[10][:, kmer_beg:kmer_end].cuda(), batch_features_all[
-                        11].cuda()
+                sampleinfo, kmere, base_means, base_median, base_stds, base_signal_lens, kmerr, signals, qual, mis, ins, dele, labels = \
+                    batch_features_all[0], \
+                    batch_features_all[1][:, kmer_bege:kmer_ende].cuda(), \
+                    batch_features_all[2][:, kmer_bege:kmer_ende].cuda(), \
+                    batch_features_all[3][:,kmer_bege:kmer_ende].cuda(), \
+                    batch_features_all[4][:, kmer_bege:kmer_ende].cuda(), \
+                    batch_features_all[5][:, kmer_bege:kmer_ende].cuda(), \
+                    batch_features_all[1][:, kmer_begr:kmer_endr].cuda(), \
+                    batch_features_all[6][:, kmer_begr:kmer_endr, :].cuda(), \
+                    batch_features_all[7][:, kmer_bege:kmer_ende].cuda(), \
+                    batch_features_all[8][:, kmer_bege:kmer_ende].cuda(), \
+                    batch_features_all[9][:, kmer_bege:kmer_ende].cuda(), \
+                    batch_features_all[10][:, kmer_bege:kmer_ende].cuda(),\
+                    batch_features_all[11].cuda()
 
                 y_true = labels.flatten()
-                y_pred = model(kmer, base_means, base_median, base_stds, base_signal_lens, signals, qual, mis, ins,
-                               dele)
+                y_pred = model(kmere, kmerr, base_means, base_median, base_stds, base_signal_lens, signals, qual, mis, ins, dele)
                 y_pred = y_pred.squeeze(-1)
                 loss = loss_func(y_pred.to(torch.float), y_true.to(torch.float))  # sigmoid
                 val_loss_list.append(loss.item())
@@ -163,7 +175,8 @@ def train(args):
     torch.manual_seed(seed)
 
     print('************* Model loader')
-    model = Model(args.model_type, args.dropout_rate, args.hidden_size, args.rnn_hid, args.seq_lens, args.signal_lens,
+    model = Model(args.model_type, args.dropout_rate, args.hidden_size, args.rnn_hid, args.seq_lenr, 
+                  args.seq_lene, args.signal_lens,
                   args.embedding_size, args.rnn_n_layers)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     loss_func = loss_function()
@@ -177,11 +190,18 @@ def train(args):
         print('********** Resume model from '+ args.resume)
         ckpt = args.resume
         checkpoint = torch.load(ckpt)
-        model.load_state_dict(checkpoint['net'])
+        try:
+            model.load_state_dict(checkpoint['net'])
+        except RuntimeError:
+            model.module.load_state_dict(checkpoint['net'])
         optimizer.load_state_dict(checkpoint['optimizer'])
+    
+    model_dir = os.path.abspath(args.save_dir).rstrip("/")
+    if not os.path.exists(model_dir):
+        os.makedirs(model_dir)
 
     # initialize the early_stopping object
-    early_stopping = EarlyStopping(patience=args.patience, verbose=True, path=args.save_dir)
+    early_stopping = EarlyStopping(patience=args.patience, verbose=True, path=model_dir)
 
     print("********** data loader")
     if args.train_option==0:
@@ -210,12 +230,15 @@ def train(args):
     train_results = {}
     val_results = {}
     print("*********** Model Train ... ")
-    kmer_beg, kmer_end = 5 - args.seq_lens//2, 5 + args.seq_lens//2 + 1
+    kmer_begr, kmer_endr = 5 - args.seq_lenr//2, 5 + args.seq_lenr//2 + 1
+    kmer_bege, kmer_ende = 5 - args.seq_lene//2, 5 + args.seq_lene//2 + 1
     for epoch in range(args.epochs):
         # trian beginning
-        train_results_epoch = train_epoch(model, train_dl, optimizer, loss_func, kmer_beg, kmer_end, args.clip_grad)
+        train_results_epoch = train_epoch(model, train_dl, optimizer, loss_func, kmer_begr, kmer_endr, 
+                                          kmer_bege, kmer_ende, args.clip_grad)
         # val beginning
-        val_results_epoch = val_epoch(model, val_dl, loss_func, kmer_beg, kmer_end, 1)
+        val_results_epoch = val_epoch(model, val_dl, loss_func, kmer_begr, kmer_endr, 
+                                      kmer_bege, kmer_ende, 1)
 
         print("Epoch:[{epoch}/{n_epoch}] \t ".format(epoch=epoch, n_epoch=args.epochs))
         print("Train Loss:{loss:.2f}\t "
@@ -237,11 +260,11 @@ def train(args):
         # early-stopping
         early_stopping(val_results_epoch['avg_loss'], model, optimizer)
         # 若满足 early stopping 要求
-        if early_stopping.early_stop:
-            print("Early stopping, epoch : ", epoch, "best----epoch=", curr_best_epoch, " -----acc= ", curr_val_bestAcc,
-                  "  -----loss= ", curr_val_min_loss)
-            # 结束模型训练
-            break
+        # if early_stopping.early_stop:
+        #     print("Early stopping, epoch : ", epoch, "best----epoch=", curr_best_epoch, " -----acc= ", curr_val_bestAcc,
+        #           "  -----loss= ", curr_val_min_loss)
+        #     # 结束模型训练
+        #     break
     linecache.clearcache()
 
 def argparser():
@@ -277,14 +300,15 @@ def argparser():
     parser.add_argument("--rnn_hid", default=128, type=int)
     parser.add_argument("--hidden_size", default=512, type=int)
     parser.add_argument("--rnn_n_layers", default=2, type=int)
-    parser.add_argument("--seq_lens", default=5, type=int)
+    parser.add_argument("--seq_lenr", default=5, type=int)
+    parser.add_argument("--seq_lene", default=11, type=int)
     parser.add_argument("--signal_lens", default=65, type=int)
     parser.add_argument("--embedding_size", default=4, type=int)
     parser.add_argument("--num_workers", default=2, type=int)
     parser.add_argument("--resume", type=str, help="train resume file: smodel.pt ")
     parser.add_argument("--model_type", default='comb_basecall_raw', type=str, 
-                        choices=["basecall", "signalFea", "raw_signal", "comb_basecall_signalFea","comb_basecall_raw","comb_signalFea_raw","comb_basecall_signalFea_raw"],
-                        required=False, help="module for train:[basecall, signalFea, raw_signal, comb_basecall_signalFea, comb_basecall_raw, comb_signalFea_raw, comb_basecall_signalFea_raw]")
+                        choices=["basecall", "signalFea", "raw_signal", "comb_basecall_signalFea","comb_basecall_raw","comb_signalFea_raw","comb_basecall_signalFea_raw", "comb_basecallns_raw"],
+                        required=False, help="module for train:[basecall, signalFea, raw_signal, comb_basecall_signalFea, comb_basecall_raw, comb_signalFea_raw, comb_basecall_signalFea_raw, comb_basecallns_raw]")
     return parser
 
 
