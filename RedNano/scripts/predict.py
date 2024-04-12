@@ -42,14 +42,13 @@ def argparser():
     parser.add_argument("--hidden_size", default=512, type=int)
 
     parser.add_argument("--rnn_n_layers", default=2, type=int)
-    parser.add_argument("--seq_lenr", default=5, type=int)
-    parser.add_argument("--seq_lene", default=11, type=int)
+    parser.add_argument("--seq_lens", default=5, type=int)
     parser.add_argument("--signal_lens", default=65, type=int)
     parser.add_argument("--embedding_size", default=4, type=int)
     parser.add_argument("--dropout_rate", default=0.5, type=float)
     parser.add_argument("--model_type", default='comb_basecall_raw', type=str, 
-                        choices=["basecall", "signalFea", "raw_signal", "comb_basecall_signalFea","comb_basecall_raw","comb_signalFea_raw","comb_basecall_signalFea_raw", "comb_basecallns_raw"],
-                        required=False, help="module for train:[basecall, signalFea, raw_signal, comb_basecall_signalFea, comb_basecall_raw, comb_signalFea_raw, comb_basecall_signalFea_raw, comb_basecallns_raw]")
+                        choices=["basecall", "signalFea", "raw_signal", "comb_basecall_signalFea","comb_basecall_raw","comb_signalFea_raw","comb_basecall_signalFea_raw"],
+                        required=False, help="module for train:[basecall, signalFea, raw_signal, comb_basecall_signalFea, comb_basecall_raw, comb_signalFea_raw, comb_basecall_signalFea_raw]")
                         
     parser.add_argument("--output_file_dir", default='./', type=str, help="floder for output]")
     parser.add_argument("--num_workers", default=2, type=int)
@@ -59,7 +58,7 @@ def argparser():
 def loss_function():
     return torch.nn.MSELoss()
 
-def test_epoch(model, test_dl, kmer_begr, kmer_endr, kmer_bege, kmer_ende, n_iters=1):
+def test_epoch(model, test_dl, kmer_beg, kmer_end, n_iters=1):
     print("test epoch")
     model.eval()
     all_y_true = None
@@ -70,25 +69,19 @@ def test_epoch(model, test_dl, kmer_begr, kmer_endr, kmer_bege, kmer_ende, n_ite
     with torch.no_grad():
         #for i, batch_features_all in enumerate(test_dl):
         for batch_features_all in tqdm(test_dl):
-            sampleinfo, kmere, base_means, base_median, base_stds, base_signal_lens, kmerr, signals, qual, mis, ins, dele = \
-                batch_features_all[0], \
-                batch_features_all[1][:, kmer_bege:kmer_ende].cuda(), \
-                batch_features_all[2][:, kmer_bege:kmer_ende].cuda(), \
-                batch_features_all[3][:,kmer_bege:kmer_ende].cuda(), \
-                batch_features_all[4][:, kmer_bege:kmer_ende].cuda(), \
-                batch_features_all[5][:, kmer_bege:kmer_ende].cuda(), \
-                batch_features_all[1][:, kmer_begr:kmer_endr].cuda(), \
-                batch_features_all[6][:, kmer_begr:kmer_endr, :].cuda(), \
-                batch_features_all[7][:, kmer_bege:kmer_ende].cuda(), \
-                batch_features_all[8][:, kmer_bege:kmer_ende].cuda(), \
-                batch_features_all[9][:, kmer_bege:kmer_ende].cuda(), \
-                batch_features_all[10][:, kmer_bege:kmer_ende].cuda()
+            sampleinfo, kmer, base_means, base_median, base_stds, base_signal_lens, signals, qual, mis, ins, dele = \
+                batch_features_all[0], batch_features_all[1][:, kmer_beg:kmer_end].cuda(), batch_features_all[2][:, kmer_beg:kmer_end].cuda(), \
+                    batch_features_all[3][:, kmer_beg:kmer_end].cuda(), \
+                    batch_features_all[4][:, kmer_beg:kmer_end].cuda(), batch_features_all[5][:, kmer_beg:kmer_end].cuda(), \
+                    batch_features_all[6][:, kmer_beg:kmer_end, :].cuda(), batch_features_all[7][:, kmer_beg:kmer_end].cuda(), \
+                    batch_features_all[8][:, kmer_beg:kmer_end].cuda(), \
+                    batch_features_all[9][:, kmer_beg:kmer_end].cuda(), batch_features_all[10][:, kmer_beg:kmer_end].cuda()
 
-            y_pred  = model(kmere, kmerr, base_means, base_median, base_stds, base_signal_lens, signals, qual, mis, ins, dele)
+            y_pred  = model(kmer, base_means, base_median, base_stds, base_signal_lens, signals, qual, mis, ins, dele)
 
             y_pred = y_pred.cpu().numpy()
             sampleinfo_.extend(sampleinfo)
-            kmer_.extend(kmerr.cpu().numpy())
+            kmer_.extend(kmer.cpu().numpy())
 
             if (len(y_pred.shape) == 1) or (y_pred.shape[1] == 1):
                 all_y_pred.extend(y_pred.flatten())
@@ -129,9 +122,7 @@ def test(args):
     batch_size = args.batch_size
 
     model_path = args.model
-    model = Model(args.model_type, args.dropout_rate, args.hidden_size, args.rnn_hid, args.seq_lenr, 
-                  args.seq_lene, args.signal_lens,
-                  args.embedding_size, args.rnn_n_layers)
+    model = Model(args.model_type, args.dropout_rate, args.hidden_size, args.rnn_hid,  args.seq_lens, args.signal_lens, args.embedding_size, args.rnn_n_layers)
     
     checkpoint = torch.load(model_path, map_location=device)
     model.load_state_dict(checkpoint['net'])
@@ -152,12 +143,11 @@ def test(args):
         os.makedirs(args.output_file_dir)
 
     print("*********** Model Test ... ")
-    kmer_begr, kmer_endr = 5 - args.seq_lenr//2, 5 + args.seq_lenr//2 + 1
-    kmer_bege, kmer_ende = 5 - args.seq_lene//2, 5 + args.seq_lene//2 + 1
+    kmer_beg, kmer_end = 5 - args.seq_lens//2, 5 + args.seq_lens//2 + 1
     for file in tqdm(file_list):
         test_dataset = MyDataSetTxt(file)
         test_dl = DataLoader(dataset=test_dataset, batch_size=batch_size, shuffle=False, num_workers=args.num_workers)
-        test_results_epoch = test_epoch(model, test_dl, kmer_begr, kmer_endr, kmer_bege, kmer_ende, 1)
+        test_results_epoch = test_epoch(model, test_dl, kmer_beg, kmer_end, 1)
 
         # 将sampleinfo保存在文件中
         sampleinfo = test_results_epoch['sampleinfo']
@@ -166,7 +156,7 @@ def test(args):
         output_data['kmer'] = [split_kmer(kmer) for kmer in test_results_epoch['kmer']]
         output_data['pred'] = list(test_results_epoch['y_pred'])
         wf_file = os.path.join(args.output_file_dir, os.path.splitext(os.path.basename(file))[0] + ".reads.output.txt")
-        output_data.to_csv(wf_file, sep='\t', index=False)
+        output_data.to_csv(wf_file, sep='\t', index=False) 
 
 def main():
     args = argparser().parse_args()
