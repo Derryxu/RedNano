@@ -1,26 +1,24 @@
-import torch, os
-#os.environ['CUDA_VISIBLE_DEVICES'] = '3'
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
-print(device)
+import os
+import torch
 import numpy as np
-import pandas as pd
-from argparse import ArgumentParser
-from argparse import ArgumentDefaultsHelpFormatter
+from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 import sys
 sys.path.append(os.getcwd())
+import time
 
-# from model.train_model_resnet_all import Model
-# from model.train_model_res_5mer import Model
-from model.model_simple import Model
+from model.models import SiteLevelModel
+from utils.constants import max_seq_len, use_cuda, FloatTensor, min_cov
+from utils.MyDataSet_txt import generate_features_line
 
-#from model.model_hdf5 import Model
+import torch.multiprocessing as mp
+try:
+    mp.set_start_method('spawn')
+except RuntimeError:
+    pass
+from torch.multiprocessing import Queue
 
+queue_size_border_batch = 100
 
-from torch.utils.data import Dataset, TensorDataset, DataLoader
-from sklearn.metrics import accuracy_score, roc_curve, precision_recall_curve, auc
-from utils.MyDataSet_txt_test import *
-from torch.utils.data import Dataset, DataLoader
-from tqdm import tqdm
 
 def argparser():
     parser = ArgumentParser(
@@ -28,139 +26,189 @@ def argparser():
         add_help=False
     )
     parser.add_argument("--model", default=None, required=True, help="model file for test")
-    
-    parser.add_argument("--test_option", default=0, type=int, required=True, help='input dataset option: [0] --test_file  [1] --test_file_dir --  [2] --test_hdf5_dir ')
-    
-    parser.add_argument("--test_file", default=None, required=False, help="features file")
-    parser.add_argument("--test_file_dir", default=None, required=False, help="features files dir")
-    parser.add_argument("--test_hdf5_dir", default=None, required=False, help="features hdf5 files dir")
+    parser.add_argument("--input_file", default=None, required=False, help="input features file")
     
     parser.add_argument("--seed", default=25, type=int)
-    parser.add_argument("--num_iterations", default=1, type=int)
-    parser.add_argument("--batch_size", default=512, type=int)
-    parser.add_argument("--rnn_hid", default=512, type=int)
-    parser.add_argument("--hidden_size", default=512, type=int)
+    parser.add_argument("--num_iterations", default=5, type=int)
+    parser.add_argument("--batch_size", default=2, type=int)
+    parser.add_argument("--hidden_size", default=128, type=int)
 
     parser.add_argument("--rnn_n_layers", default=2, type=int)
     parser.add_argument("--seq_lens", default=5, type=int)
     parser.add_argument("--signal_lens", default=65, type=int)
     parser.add_argument("--embedding_size", default=4, type=int)
-    parser.add_argument("--dropout_rate", default=0.5, type=float)
     parser.add_argument("--model_type", default='comb_basecall_raw', type=str, 
-                        choices=["basecall", "signalFea", "raw_signal", "comb_basecall_signalFea","comb_basecall_raw","comb_signalFea_raw","comb_basecall_signalFea_raw"],
-                        required=False, help="module for train:[basecall, signalFea, raw_signal, comb_basecall_signalFea, comb_basecall_raw, comb_signalFea_raw, comb_basecall_signalFea_raw]")
+                        choices=["basecall", "raw_signal", "comb_basecall_raw"],
+                        required=False, help="module for train:[basecall, raw_signal, comb_basecall_raw]")
                         
-    parser.add_argument("--output_file_dir", default='./', type=str, help="floder for output]")
-    parser.add_argument("--num_workers", default=2, type=int)
+    parser.add_argument("--output_file", required=True, type=str, help="output file")
+
+    parser.add_argument("--nproc", default=1, type=int, help="number of processes")
 
     return parser
 
-def loss_function():
-    return torch.nn.MSELoss()
 
-def test_epoch(model, test_dl, kmer_beg, kmer_end, n_iters=1):
-    print("test epoch")
-    model.eval()
-    all_y_true = None
-    all_y_pred = []
-    sampleinfo_ = []
-    kmer_ = []
-
-    with torch.no_grad():
-        #for i, batch_features_all in enumerate(test_dl):
-        for batch_features_all in tqdm(test_dl):
-            sampleinfo, kmer, base_means, base_median, base_stds, base_signal_lens, signals, qual, mis, ins, dele = \
-                batch_features_all[0], batch_features_all[1][:, kmer_beg:kmer_end].cuda(), batch_features_all[2][:, kmer_beg:kmer_end].cuda(), \
-                    batch_features_all[3][:, kmer_beg:kmer_end].cuda(), \
-                    batch_features_all[4][:, kmer_beg:kmer_end].cuda(), batch_features_all[5][:, kmer_beg:kmer_end].cuda(), \
-                    batch_features_all[6][:, kmer_beg:kmer_end, :].cuda(), batch_features_all[7][:, kmer_beg:kmer_end].cuda(), \
-                    batch_features_all[8][:, kmer_beg:kmer_end].cuda(), \
-                    batch_features_all[9][:, kmer_beg:kmer_end].cuda(), batch_features_all[10][:, kmer_beg:kmer_end].cuda()
-
-            y_pred  = model(kmer, base_means, base_median, base_stds, base_signal_lens, signals, qual, mis, ins, dele)
-
-            y_pred = y_pred.cpu().numpy()
-            sampleinfo_.extend(sampleinfo)
-            kmer_.extend(kmer.cpu().numpy())
-
-            if (len(y_pred.shape) == 1) or (y_pred.shape[1] == 1):
-                all_y_pred.extend(y_pred.flatten())
-            else:
-                all_y_pred.extend(y_pred[:, 1])
-        # sampleinfo
-    all_y_pred = np.array(all_y_pred).flatten()
-    test_results = {}
-    test_results['sampleinfo'] = sampleinfo_
-    test_results['kmer'] = kmer_
-    test_results['y_pred'] = all_y_pred
-
-    return test_results
+def read_feature_file(feature_file, features_batch_q, batch_size=2, seq_len=5):
+    print("read_features process-{} starts".format(os.getpid()))
+    center_pos = max_seq_len // 2
+    kmerb, kmere = center_pos - seq_len//2, center_pos + seq_len//2 + 1
+    sampleids, features, labels = [], [], []
+    site_num, site_batch = 0, 0
+    with open(feature_file, "r") as f:
+        for line in f:
+            site_num += 1
+            sampleid, feature, label = generate_features_line(line, kmerb, kmere, sampleing=False)
+            sampleids.append(sampleid)
+            features.append(feature)
+            labels.append(label)
+            if len(features) == batch_size:
+                features_batch_q.put((sampleids, features, labels))
+                site_batch += 1
+                while features_batch_q.qsize() > queue_size_border_batch:
+                    time.sleep(0.1)
+                sampleids, features, labels = [], [], []
+        if len(features) > 0:
+            features_batch_q.put((sampleids, features, labels))
+    features_batch_q.put("kill")
+    print("read_features process-{} ending, read {} site_features in {} batches({})".format(os.getpid(),
+                                                                                            site_num, 
+                                                                                            site_batch, 
+                                                                                            batch_size))
 
 
-def split_sampleinfo(sampleinfo):
-    infos = sampleinfo.split("\t")
-    return infos
+def _predict(features_batch, model, num_iters=5, device=0):
+    sampleids, features, _ = features_batch
+    covs = [x.shape[0] for x in features]
+    covs_cumsum = np.cumsum(covs)
+    features_all = FloatTensor(np.concatenate(features, axis=0), device)
+    read_probs = model.get_read_level_probs(features_all)
+    if use_cuda:
+        read_probs = read_probs.detach().cpu()
+    read_probs = read_probs.numpy().flatten()
+    read_prob_groups = np.split(read_probs, covs_cumsum[:-1])
+    assert len(read_prob_groups) == len(sampleids) and sum([len(x) for x in read_prob_groups]) == len(features_all)
+    pred_str = []
+    for idx in range(len(read_prob_groups)):
+        # len of array must be larger than min_cov
+        site_prob = np.concatenate([np.random.choice(read_prob_groups[idx], min_cov, replace=False) for _ in range(num_iters)]).reshape(num_iters, min_cov)
+        site_prob_mean = (1 - np.prod(1 - site_prob, axis=1)).mean()
+        label = 0
+        if site_prob_mean >= 0.5:
+            label = 1
+        pred_str.append("\t".join([sampleids[idx], str(round(site_prob_mean, 6)), str(label)]))
+    return pred_str
 
-code2base = {0: 'A', 1: 'C', 2: 'G', 3: 'T'}
 
-def split_kmer(kmer):
-    strs = "".join([code2base[x] for x in kmer])
-    return strs
+def predict(model_path, features_batch_q, pred_str_q, args, device=0):
+    print('call_mods process-{} starts'.format(os.getpid()))
+    model = SiteLevelModel(args.model_type, 0, args.hidden_size, 
+                           args.seq_lens, args.signal_lens, args.embedding_size, 
+                           args.rnn_n_layers, device=device)
     
-def listdir(path):
-    file_list = []
-    for file in os.listdir(path):
-        file_list.append(os.path.join(path, file))
-    return file_list
+    checkpoint = torch.load(model_path, map_location=torch.device('cpu'))
+    try:
+        model.load_state_dict(checkpoint['net'])
+    except RuntimeError:
+        model.module.load_state_dict(checkpoint['net'])
+    if use_cuda:
+        model = model.cuda(device)
+    model.eval()
+    batch_num = 0
+    while True:
+        if features_batch_q.empty():
+            time.sleep(0.1)
+            continue
+        features_batch = features_batch_q.get()
+        if features_batch == "kill":
+            features_batch_q.put("kill")
+            break
+        batch_num += 1
+        pred_str = _predict(features_batch, model, args.num_iterations, device)
+        pred_str_q.put(pred_str)
+        while pred_str_q.qsize() > queue_size_border_batch:
+            time.sleep(0.1)
+    print('call_mods process-{} ending, process {} batches({})'.format(os.getpid(), batch_num, 
+                                                                       args.batch_size))
+
+
+def _write_predstr_to_file(write_fp, predstr_q):
+    print('write_process-{} starts'.format(os.getpid()))
+    with open(write_fp, 'w') as wf:
+        while True:
+            # during test, it's ok without the sleep()
+            if predstr_q.empty():
+                time.sleep(0.1)
+                continue
+            pred_str = predstr_q.get()
+            if pred_str == "kill":
+                print('write_process-{} finished'.format(os.getpid()))
+                break
+            for one_pred_str in pred_str:
+                wf.write(one_pred_str + "\n")
+            wf.flush()
+
+
+def _get_gpus():
+    num_gpus = torch.cuda.device_count()
+    if num_gpus > 0:
+        gpulist = list(range(num_gpus))
+    else:
+        gpulist = [0]
+    return gpulist * 1000
 
 
 def test(args):
+    print("[main]predicting starts..")
+    start = time.time()
+    if not os.path.exists(args.model):
+        raise FileNotFoundError("model file not exists")
+
     seed = args.seed
     np.random.seed(seed)
     torch.manual_seed(seed)
-    n_iterations = args.num_iterations
+
+    nproc = args.nproc
+    if nproc < 3:
+        print("nproc should be larger than 2")
+        nproc = 3
+    nproc_dp = nproc - 2
+    if not use_cuda:
+        nproc_dp = 2
+
     batch_size = args.batch_size
+    features_batch_q = Queue()
+    p_rf = mp.Process(target=read_feature_file, args=(args.input_file, features_batch_q, batch_size, args.seq_lens))
+    p_rf.daemon = True
+    p_rf.start()
 
-    model_path = args.model
-    model = Model(args.model_type, args.dropout_rate, args.hidden_size, args.rnn_hid,  args.seq_lens, args.signal_lens, args.embedding_size, args.rnn_n_layers)
+    pred_str_q = Queue()
+    predstr_procs = []
+    gpulist = _get_gpus()
+    gpuindex = 0
+    for _ in range(nproc_dp):
+        p = mp.Process(target=predict, args=(args.model, features_batch_q, pred_str_q, args, gpulist[gpuindex]))
+        p.daemon = True
+        p.start()
+        predstr_procs.append(p)
+        gpuindex += 1
     
-    checkpoint = torch.load(model_path, map_location=device)
-    model.load_state_dict(checkpoint['net'])
+    p_w = mp.Process(target=_write_predstr_to_file, args=(args.output_file, pred_str_q))
+    p_w.daemon = True
+    p_w.start()
 
-    if torch.cuda.device_count() > 1:
-        print(device, "Use", torch.cuda.device_count(), 'gpus')
-    model.to(device)
-    print(model)
-
-    print("********** data loader")
-    if args.test_option==0:
-        file_list = [args.test_file]
-        print(len(file_list))
-    elif args.test_option==1:
-        file_list = listdir(args.test_file_dir)
+    for p in predstr_procs:
+        p.join()
     
-    if not os.path.exists(args.output_file_dir):
-        os.makedirs(args.output_file_dir)
+    pred_str_q.put("kill")
+    p_rf.join()
+    p_w.join()
+    print("[main]predicting costs %.2f seconds.." % (time.time() - start))
 
-    print("*********** Model Test ... ")
-    kmer_beg, kmer_end = 5 - args.seq_lens//2, 5 + args.seq_lens//2 + 1
-    for file in tqdm(file_list):
-        test_dataset = MyDataSetTxt(file)
-        test_dl = DataLoader(dataset=test_dataset, batch_size=batch_size, shuffle=False, num_workers=args.num_workers)
-        test_results_epoch = test_epoch(model, test_dl, kmer_beg, kmer_end, 1)
-
-        # 将sampleinfo保存在文件中
-        sampleinfo = test_results_epoch['sampleinfo']
-        output_data = pd.DataFrame([split_sampleinfo(sa) for sa in sampleinfo])
-        output_data.columns = ['chrom', 'pos', 'alignstrand', 'loc_in_re', 'readname', 'strand']
-        output_data['kmer'] = [split_kmer(kmer) for kmer in test_results_epoch['kmer']]
-        output_data['pred'] = list(test_results_epoch['y_pred'])
-        wf_file = os.path.join(args.output_file_dir, os.path.splitext(os.path.basename(file))[0] + ".reads.output.txt")
-        output_data.to_csv(wf_file, sep='\t', index=False) 
 
 def main():
     args = argparser().parse_args()
     test(args)
+
 
 if __name__ == '__main__':
     main()

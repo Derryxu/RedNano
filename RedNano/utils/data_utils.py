@@ -116,3 +116,14 @@ class data_prefetcher():
         input = self.next_input
         self.preload()
         return input
+
+
+def count_line_num(sl_filepath, fheader=False):
+    count = 0
+    with open(sl_filepath, 'r') as rf:
+        if fheader:
+            next(rf)
+        for _ in rf:
+            count += 1
+    print('done count the lines of file {}'.format(sl_filepath))
+    return count

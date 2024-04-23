@@ -48,7 +48,7 @@ class GlobalAvgPool1d(nn.Module):
         return F.avg_pool1d(x, kernel_size=x.size()[2:])
 
 
-def resnet18(output=2, in_channels=5):
+def resnet18(in_channels=5, out_channels=512):
     net = nn.Sequential(
         #nn.Conv1d(in_channels, 64, kernel_size=7, stride=2, padding=3),
         nn.Conv1d(in_channels, 64, kernel_size=7, stride=2, padding=3),
@@ -60,25 +60,19 @@ def resnet18(output=2, in_channels=5):
     net.add_module("resnet_block2", resnet_block(64, 128, 2))
     net.add_module("resnet_block3", resnet_block(128, 256, 2))
     net.add_module("dropout2",nn.Dropout(p=0.2)) 
-    net.add_module("resnet_block4", resnet_block(256, 512, 2))
+    net.add_module("resnet_block4", resnet_block(256, out_channels, 2))
     net.add_module("global_avg_pool", GlobalAvgPool1d())
     #net.add_module("fc", FlattenLayer())
     #net.add_module("fc", nn.Sequential(FlattenLayer(), nn.Linear(512, output)))
     return net
 
 class Resnet(nn.Module):
-    def __init__(self, in_channels=5):
+    def __init__(self, in_channels=5, out_channels=512):
         super(Resnet, self).__init__()
-        self.resnet = resnet18(output=2, in_channels=in_channels) #
-        self.embed = nn.Embedding(4, 32)
-        self.seq_len = 5
-        self.hidden_size = 256
-        self.num_layers  = 4
+        self.resnet = resnet18(in_channels=in_channels, out_channels=out_channels)
     def forward(self,x):
-        x = self.resnet(x)
-        #print("resnet output ", x.shape)
+        x = self.resnet(x).view(x.shape[0], -1)
         return x
-        #return x[:,1]
 
 
 class Conv1d(nn.Module):
