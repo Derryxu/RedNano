@@ -6,9 +6,9 @@ import sys
 sys.path.append(os.getcwd())
 import time
 
-from model.models import SiteLevelModel
-from utils.constants import max_seq_len, use_cuda, FloatTensor, min_cov, max_signal_len
-from utils.MyDataSet_txt import generate_features_line
+from model.models import ReadLevelModel
+from utils.constants import max_seq_len, use_cuda, FloatTensor, code2base
+from utils.MyDataSet_txt import read_level_features_line
 
 import torch.multiprocessing as mp
 try:
@@ -29,10 +29,10 @@ def argparser():
     parser.add_argument("--input_file", default=None, required=False, help="input features file")
     
     parser.add_argument("--seed", default=25, type=int)
-    parser.add_argument("--num_iterations", default=5, type=int)
-    parser.add_argument("--batch_size", default=2, type=int)
+    parser.add_argument("--batch_size", default=512, type=int)
     parser.add_argument("--hidden_size", default=128, type=int)
 
+    parser.add_argument("--rnn_n_layers", default=2, type=int)
     parser.add_argument("--seq_lens", default=5, type=int)
     parser.add_argument("--signal_lens", default=65, type=int)
     parser.add_argument("--embedding_size", default=4, type=int)
@@ -47,64 +47,54 @@ def argparser():
     return parser
 
 
-def read_feature_file(feature_file, features_batch_q, batch_size=2, seq_len=5, signal_len=65):
+def read_feature_file(feature_file, features_batch_q, batch_size=2, seq_len=5):
     print("read_features process-{} starts".format(os.getpid()))
     center_pos = max_seq_len // 2
     kmerb, kmere = center_pos - seq_len//2, center_pos + seq_len//2 + 1
-    center_pos_signal = max_signal_len // 2
-    signalb, signale = center_pos_signal - signal_len//2, center_pos_signal + signal_len//2 + 1
     sampleids, features = [], []
     site_num, site_batch = 0, 0
     with open(feature_file, "r") as f:
         for line in f:
             site_num += 1
-            sampleid, feature, _ = generate_features_line(line, kmerb, kmere, signalb, signale, False)
+            sampleid, feature, _ = read_level_features_line(line, kmerb, kmere)
             sampleids.append(sampleid)
             features.append(feature)
             if len(features) == batch_size:
-                features_batch_q.put((sampleids, features))
+                features_batch_q.put((sampleids, np.array(features)))
                 site_batch += 1
                 while features_batch_q.qsize() > queue_size_border_batch:
                     time.sleep(0.1)
                 sampleids, features = [], []
         if len(features) > 0:
-            features_batch_q.put((sampleids, features))
+            features_batch_q.put((sampleids, np.array(features)))
     features_batch_q.put("kill")
-    print("read_features process-{} ending, read {} site_features in {} batches({})".format(os.getpid(),
-                                                                                            site_num, 
-                                                                                            site_batch, 
-                                                                                            batch_size))
+    print("read_features process-{} ending, read {} sample_features in {} batches({})".format(os.getpid(),
+                                                                                              site_num, 
+                                                                                              site_batch, 
+                                                                                              batch_size))
 
 
-def _predict(features_batch, model, num_iters=5, device=0):
+def _predict(features_batch, model, device=0):
     sampleids, features = features_batch
-    covs = [x.shape[0] for x in features]
-    covs_cumsum = np.cumsum(covs)
-    features_all = FloatTensor(np.concatenate(features, axis=0), device)
-    read_probs = model.get_read_level_probs(features_all)
+    kmers = features[:, 0, :]
+    features_all = FloatTensor(features, device)
+    read_probs = model(features_all)
     if use_cuda:
         read_probs = read_probs.detach().cpu()
     read_probs = read_probs.numpy().flatten()
-    read_prob_groups = np.split(read_probs, covs_cumsum[:-1])
-    # print("read_prob_groups: ", len(read_prob_groups), len(sampleids), sum([len(x) for x in read_prob_groups]), len(features_all))
-    assert len(read_prob_groups) == len(sampleids) and sum([len(x) for x in read_prob_groups]) == len(features_all)
     pred_str = []
-    for idx in range(len(read_prob_groups)):
-        # len of array must be larger than min_cov
-        site_prob = np.concatenate([np.random.choice(read_prob_groups[idx], min_cov, replace=False) for _ in range(num_iters)]).reshape(num_iters, min_cov)
-        site_prob_mean = (1 - np.prod(1 - site_prob, axis=1)).mean()
-        label = 0
-        if site_prob_mean >= 0.5:
-            label = 1
-        pred_str.append("\t".join([sampleids[idx], str(round(site_prob_mean, 6)), str(label)]))
+    for idx in range(len(read_probs)):
+        pred_str.append("\t".join([sampleids[idx], 
+                                   "".join([code2base[x] for x in kmers[idx]]), 
+                                   str(round(read_probs[idx], 6))]))
     return pred_str
 
 
 def predict(model_path, features_batch_q, pred_str_q, args, device=0):
     print('call_mods process-{} starts'.format(os.getpid()))
-    model = SiteLevelModel(args.model_type, 0, args.hidden_size, 
+    model = ReadLevelModel(args.model_type, 0, args.hidden_size, 
                            args.seq_lens, args.signal_lens, args.embedding_size, 
-                           device=device)
+                           args.rnn_n_layers, device=device)
     
     checkpoint = torch.load(model_path, map_location=torch.device('cpu'))
     try:
@@ -124,7 +114,7 @@ def predict(model_path, features_batch_q, pred_str_q, args, device=0):
             features_batch_q.put("kill")
             break
         batch_num += 1
-        pred_str = _predict(features_batch, model, args.num_iterations, device)
+        pred_str = _predict(features_batch, model, device)
         pred_str_q.put(pred_str)
         while pred_str_q.qsize() > queue_size_border_batch:
             time.sleep(0.1)
@@ -135,6 +125,7 @@ def predict(model_path, features_batch_q, pred_str_q, args, device=0):
 def _write_predstr_to_file(write_fp, predstr_q):
     print('write_process-{} starts'.format(os.getpid()))
     with open(write_fp, 'w') as wf:
+        wf.write("chrom\tpos\talignstrand\tloc_in_re\treadname\tstrand\tkmer\tprob\n")
         while True:
             # during test, it's ok without the sleep()
             if predstr_q.empty():
@@ -159,7 +150,7 @@ def _get_gpus():
 
 
 def test(args):
-    print("[main]predicting starts..")
+    print("[main]read-level predicting starts..")
     start = time.time()
     if not os.path.exists(args.model):
         raise FileNotFoundError("model file not exists")
@@ -178,8 +169,7 @@ def test(args):
 
     batch_size = args.batch_size
     features_batch_q = Queue()
-    p_rf = mp.Process(target=read_feature_file, args=(args.input_file, features_batch_q, batch_size, 
-                                                      args.seq_lens, args.signal_lens))
+    p_rf = mp.Process(target=read_feature_file, args=(args.input_file, features_batch_q, batch_size, args.seq_lens))
     p_rf.daemon = True
     p_rf.start()
 
@@ -204,7 +194,7 @@ def test(args):
     pred_str_q.put("kill")
     p_rf.join()
     p_w.join()
-    print("[main]predicting costs %.2f seconds.." % (time.time() - start))
+    print("[main]read-level predicting costs %.2f seconds.." % (time.time() - start))
 
 
 def main():

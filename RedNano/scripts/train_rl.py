@@ -10,8 +10,8 @@ from tqdm import tqdm
 import torch
 from torch.utils.data import DataLoader
 sys.path.append(os.getcwd())
-from model.models import SiteLevelModel
-from utils.MyDataSet_txt import MyDataSetTxt, MyDataSetTxt2, generate_offsets, clear_linecache
+from model.models import ReadLevelModel
+from utils.MyDataSet_txt import MyDataSetTxt_read_level, clear_linecache
 from utils.hct_sample import *
 from utils.pytorchtools import EarlyStopping
 from utils.constants import use_cuda
@@ -174,8 +174,8 @@ def train(args):
     torch.manual_seed(seed)
 
     print('************* Model loader')
-    model = SiteLevelModel(args.model_type, args.dropout_rate, args.hidden_size, args.seq_lens, args.signal_lens,
-                           args.embedding_size)
+    model = ReadLevelModel(args.model_type, args.dropout_rate, args.hidden_size, args.seq_lens, args.signal_lens,
+                           args.embedding_size, args.rnn_n_layers)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     loss_func = loss_function()
 
@@ -203,28 +203,19 @@ def train(args):
 
     print("********** data loader")
     if args.train_option==0:
-        train_dataset = MyDataSetTxt(args.train_file, seq_len=args.seq_lens, signal_len=args.signal_lens)
-        validate_dataset = MyDataSetTxt(args.valid_file, seq_len=args.seq_lens, signal_len=args.signal_lens)
+        train_dataset = MyDataSetTxt_read_level(args.train_file, seq_len=args.seq_lens, signal_len=args.signal_lens)
+        validate_dataset = MyDataSetTxt_read_level(args.valid_file, seq_len=args.seq_lens, signal_len=args.signal_lens)
     elif args.train_option==1:
         exit()
         # hdf5 file ********
     elif args.train_option==2 and args.sample=="no_sample":
         train_filelist, val_filelist = no_sample_txt(args.train_val_pos_file, args.train_val_neg_file)
-        train_dataset = MyDataSetTxt(train_filelist)
-        validate_dataset = MyDataSetTxt(val_filelist)
+        train_dataset = MyDataSetTxt_read_level(train_filelist)
+        validate_dataset = MyDataSetTxt_read_level(val_filelist)
     elif args.train_option==2 and args.sample=='unm_undersample':
         train_filelist, val_filelist = undersample_txt(args.train_val_pos_file, args.train_val_neg_file)
-        train_dataset = MyDataSetTxt(train_filelist)
-        validate_dataset = MyDataSetTxt(val_filelist)
-    elif args.train_option==3:
-        train_linenum = count_line_num(args.train_file, False)
-        train_offsets = generate_offsets(args.train_file)
-        valid_linenum = count_line_num(args.valid_file, False)
-        valid_offsets = generate_offsets(args.valid_file)
-        train_dataset = MyDataSetTxt2(args.train_file, offsets=train_offsets, 
-                                      linenum=train_linenum, seq_len=args.seq_lens, signal_len=args.signal_lens)
-        validate_dataset = MyDataSetTxt2(args.valid_file, offsets=valid_offsets, 
-                                         linenum=valid_linenum, seq_len=args.seq_lens, signal_len=args.signal_lens)
+        train_dataset = MyDataSetTxt_read_level(train_filelist)
+        validate_dataset = MyDataSetTxt_read_level(val_filelist)
     else:
         return False
 
@@ -280,7 +271,7 @@ def train(args):
             else:
                 early_stopping.recount()
     if args.train_option==0:
-        clear_linecache()
+        clear_linecache
 
 
 def argparser():
@@ -315,6 +306,7 @@ def argparser():
     parser.add_argument("--clip_grad", default=0.5, type=float)
     parser.add_argument("--dropout_rate", default=0.5, type=float)
     parser.add_argument("--hidden_size", default=128, type=int)
+    parser.add_argument("--rnn_n_layers", default=2, type=int)
     parser.add_argument("--seq_lens", default=5, type=int)
     parser.add_argument("--signal_lens", default=65, type=int)
     parser.add_argument("--embedding_size", default=4, type=int)

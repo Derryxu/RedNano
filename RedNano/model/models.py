@@ -1,23 +1,21 @@
 import torch
 from torch import nn
-from .resnet import Resnet, Conv1d
+from .resnet import Resnet2, Resnet3, Conv1d
 from .util import Full_NN, FlattenLayer, one_hot_embedding
-from .rnn import  RNN_LSTM, BiLSTM
+# from .rnn import  RNN_LSTM, BiLSTM
 from utils.constants import min_cov
 
 class ReadLevelModel(nn.Module):
 
     def __init__(self, model_type, dropout_rate=0.5, hidden_size=128,
-                 seq_len=5, signal_lens=65, embedding_size=4, num_layers=2, 
-                 device=0):
+                 seq_len=5, signal_lens=65, embedding_size=4, device=0):
         super(ReadLevelModel, self).__init__()
         self.seq_len = seq_len
-        self.fc = FlattenLayer()
         self.relu = nn.ReLU()
         self.softmax = nn.Softmax(dim=1)
         self.sigmoid = nn.Sigmoid()
         self.model_type = model_type
-        self.raw, self.basecall, self.signalFea = False, False, False
+        self.raw, self.basecall = False, False
         if self.model_type in ["raw_signal", "comb_basecall_raw"]:
             self.raw = True
         if self.model_type in ["basecall", "comb_basecall_raw"]:
@@ -25,17 +23,18 @@ class ReadLevelModel(nn.Module):
 
         if self.basecall:
             self.embed = nn.Embedding(4, embedding_size)
-            self.resnet = Resnet(in_channels=embedding_size+4, out_channels=2*hidden_size)
+            self.resnet = Resnet3(in_channels=embedding_size+4, out_channels=256)
         
         if self.raw:
-            # self.cnn = Conv1d(in_channels=(num_hidden*2), out_channels=hidden_size)
-            # self.bilstm =RNN_LSTM((self.seq_len), num_hidden, num_layers, dropout_rate=dropout_rate)
-            self.bilstm = BiLSTM(4+1, hidden_size, num_layers, dropout_rate=dropout_rate, device=device)
+            # self.bilstm = BiLSTM(4+1, hidden_size, num_layers, dropout_rate=dropout_rate, device=device)
+            self.resnet_r = Resnet2(in_channels=4+1, out_channels=256)
         
         if self.raw and self.basecall:
-            self.full = Full_NN(input_size=hidden_size*4, hidden_size=hidden_size, num_classes=1, dropout_rate=dropout_rate)
-        else:
-            self.full = Full_NN(input_size=hidden_size*2, hidden_size=hidden_size, num_classes=1, dropout_rate=dropout_rate)
+            self.full = Full_NN(input_size=256+256, hidden_size=hidden_size, num_classes=1, dropout_rate=dropout_rate)
+        elif self.raw: # only raw
+            self.full = Full_NN(input_size=256, hidden_size=hidden_size, num_classes=1, dropout_rate=dropout_rate)
+        else:  # only basecall
+            self.full = Full_NN(input_size=256, hidden_size=hidden_size, num_classes=1, dropout_rate=dropout_rate)
 
 
     def forward(self, features):
@@ -53,7 +52,7 @@ class ReadLevelModel(nn.Module):
             mis = torch.reshape(mis, (-1, self.seq_len, 1)).float()
             ins = torch.reshape(ins, (-1, self.seq_len, 1)).float()
             dele = torch.reshape(dele, (-1, self.seq_len, 1)).float()
-            y = torch.cat((y_kmer_embed, qual, mis, ins, dele), 2)  # (N, 8, 5)
+            y = torch.cat((y_kmer_embed, qual, mis, ins, dele), 2)  # (N, 5, 8)
             
             y = torch.transpose(y, 1, 2)
             y = self.resnet(y)
@@ -63,16 +62,12 @@ class ReadLevelModel(nn.Module):
             signals = signals.float()
             signals_len = signals.shape[2]
             kmer_embed = one_hot_embedding(kmer.long(), signals_len) # torch.Size([N, seq_len*signal_len, 4])
-            #signals_ex = signals.view(signals.shape[0], -1, 1)
             signals_ex = signals.reshape(signals.shape[0], -1, 1)
             # print("signals_ex: ", signals_ex.shape)  # (N, seq_len*signal_len, 1)
             # print("kmer_embed: ", kmer_embed.shape)  # (N, seq_len*singal_len, 4)
-            x = torch.cat((kmer_embed, signals_ex), -1)
-            x = self.bilstm(x)
-            # print("bilstm output ", x.shape)  # (N, 2*hidden_size)
-            # x_out = torch.transpose(x_out, 1, 2)
-            # x_out = self.cnn(x_out)
-            # x_out = self.fc(x_out)
+            x = torch.cat((kmer_embed, signals_ex), -1)  # (N, L, C)
+            x = torch.transpose(x, 1, 2)
+            x = self.resnet_r(x)
 
         ##################### Full connect layer
         if self.raw and self.basecall:
@@ -91,12 +86,10 @@ class ReadLevelModel(nn.Module):
 class SiteLevelModel(nn.Module):
 
     def __init__(self, model_type, dropout_rate=0.5, hidden_size=128, 
-                 seq_len=5, signal_lens=65, embedding_size=4, num_layers=2, 
-                 device=0):
+                 seq_len=5, signal_lens=65, embedding_size=4, device=0):
         super(SiteLevelModel, self).__init__()
-        self.read_level_model = ReadLevelModel(model_type, dropout_rate, hidden_size, 
-                                               seq_len, signal_lens, embedding_size, num_layers, 
-                                               device=device)
+        self.read_level_model = ReadLevelModel(model_type, dropout_rate, hidden_size, seq_len, signal_lens, 
+                                               embedding_size, device=device)
     
     def get_read_level_probs(self, features):  # flattened features (N, 70, 5)
         return self.read_level_model(features)

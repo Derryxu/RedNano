@@ -3,12 +3,32 @@ import linecache
 import os
 import numpy as np
 
-from utils.constants import base2code, min_cov, max_seq_len
+from utils.constants import base2code, min_cov, max_seq_len, max_signal_len
 
 
-def _parse_one_read_level_feature(feature, kmerb, kmere, kmer):
+def clear_linecache():
+    linecache.clearcache()
+
+
+def _parse_one_read_level_feature(feature, kmerb, kmere, signalb, signale, kmer):
     words = feature.strip().split("||")
+    
+    base_signal_lens = np.array([int(x) for x in words[3].split(",")])[kmerb:kmere]
+    # k_signals = np.array([[float(y) for y in x.split(",")] for x in words[4].split(";")])[kmerb:kmere, signalb:signale]
     k_signals = np.array([[float(y) for y in x.split(",")] for x in words[4].split(";")])[kmerb:kmere]
+    k_signals_new = np.zeros((len(k_signals), signale - signalb))
+    for i in range(len(k_signals)):
+        k_signals_tem = k_signals[i]
+        if base_signal_lens[i] < signale - signalb:
+            k_signals_tem = k_signals_tem[signalb:signale]
+        else:
+            pad0s = max_signal_len - base_signal_lens[i]
+            padl, padr = pad0s // 2, pad0s - pad0s // 2
+            k_signals_tem = k_signals_tem[padl:-padr] if pad0s > 0 else k_signals_tem
+            k_signals_tem = k_signals_tem[np.sort(np.random.choice(len(k_signals_tem), signale - signalb, replace=False))]
+        k_signals_new[i] = k_signals_tem
+    k_signals = k_signals_new
+    
     qual = np.array([int(x) for x in words[5].split(",")])[kmerb:kmere]
     mis = np.array([int(x) for x in words[6].split(",")])[kmerb:kmere]
     ins = np.array([int(x) for x in words[7].split(",")])[kmerb:kmere]
@@ -20,7 +40,7 @@ def _parse_one_read_level_feature(feature, kmerb, kmere, kmer):
                            axis=0)
 
 
-def generate_features_line(line, kmerb, kmere, sampleing=True):
+def generate_features_line(line, kmerb=3, kmere=8, signalb=0, signale=65, sampleing=True):
     words = line.strip().split("\t")
     sampleinfo = "\t".join(words[0:3])
     coverage = int(words[3])
@@ -29,13 +49,13 @@ def generate_features_line(line, kmerb, kmere, sampleing=True):
     assert len(features) == coverage
     if sampleing:
         features = features[np.random.choice(coverage, min_cov, replace=False)]
-    features = np.array([_parse_one_read_level_feature(x, kmerb, kmere, kmer) for x in features])
+    features = np.array([_parse_one_read_level_feature(x, kmerb, kmere, signalb, signale, kmer) for x in features])
     label = int(words[-1])
     return sampleinfo, features, label
 
 
 class MyDataSetTxt(Dataset):
-    def __init__(self, filename, seq_len=5, transform=None):
+    def __init__(self, filename, seq_len=5, signal_len=65, transform=None):
         # print(">>>using linecache to access '{}'<<<\n"
         #       ">>>after done using the file, "
         #       "remember to use linecache.clearcache() to clear cache for safety<<<".format(filename))
@@ -44,6 +64,8 @@ class MyDataSetTxt(Dataset):
         self.seq_len=seq_len
         center_pos = max_seq_len // 2
         self.kmerb, self.kmere = center_pos - self.seq_len//2, center_pos + self.seq_len//2 + 1
+        center_pos_signal = max_signal_len // 2
+        self.signalb, self.signale = center_pos_signal - signal_len//2, center_pos_signal + signal_len//2 + 1
         self._transform = transform
         with open(filename, "r") as f:
             self._total_data = len(f.readlines())
@@ -53,7 +75,7 @@ class MyDataSetTxt(Dataset):
         if line == "":
             return None
         else:
-            output = generate_features_line(line, self.kmerb, self.kmere)
+            output = generate_features_line(line, self.kmerb, self.kmere, self.signalb, self.signale)
             if self._transform is not None:
                 output = self._transform(output)
             return output
@@ -81,13 +103,15 @@ def generate_offsets(filename):
 
 
 class MyDataSetTxt2(Dataset):
-    def __init__(self, filename, offsets, linenum, seq_len=5, transform=None):
+    def __init__(self, filename, offsets, linenum, seq_len=5, signal_len=65, transform=None):
         self._filename = os.path.abspath(filename)
         self._total_data = linenum
 
         self.seq_len=seq_len
         center_pos = max_seq_len // 2
         self.kmerb, self.kmere = center_pos - self.seq_len//2, center_pos + self.seq_len//2 + 1
+        center_pos_signal = max_signal_len // 2
+        self.signalb, self.signale = center_pos_signal - signal_len//2, center_pos_signal + signal_len//2 + 1
         
         self._transform = transform
 
@@ -102,7 +126,7 @@ class MyDataSetTxt2(Dataset):
         with open(self._filename, "r") as rf:
             rf.seek(offset)
             line = rf.readline()
-        output = generate_features_line(line, self.kmerb, self.kmere)
+        output = generate_features_line(line, self.kmerb, self.kmere, self.signalb, self.signale)
         if self._transform is not None:
             output = self._transform(output)
         return output
@@ -112,4 +136,77 @@ class MyDataSetTxt2(Dataset):
 
     def close(self):
         # self._data_stream.close()
+        pass
+
+
+def read_level_features_line(line, kmerb, kmere, signalb=0, signale=65):
+    words = line.strip().split("\t")
+    sampleinfo = "\t".join(words[0:6])
+    kmers = np.array([base2code[x] for x in words[6]])[kmerb:kmere]
+    # base_means = np.array([float(x) for x in words[7].split(",")])
+    # base_median = np.array([float(x) for x in words[8].split(",")])
+    # base_stds = np.array([float(x) for x in words[9].split(",")])
+    base_signal_lens = np.array([int(x) for x in words[10].split(",")])
+    # k_signals = np.array([[float(y) for y in x.split(",")] for x in words[11].split(";")])[kmerb:kmere, signalb:signale]
+    k_signals = np.array([[float(y) for y in x.split(",")] for x in words[11].split(";")])[kmerb:kmere]
+    k_signals_new = np.zeros((len(k_signals), signale - signalb))
+    for i in range(len(k_signals)):
+        k_signals_tem = k_signals[i]
+        if base_signal_lens[i] < signale - signalb:
+            k_signals_tem = k_signals_tem[signalb:signale]
+        else:
+            pad0s = max_signal_len - base_signal_lens[i]
+            padl, padr = pad0s // 2, pad0s - pad0s // 2
+            k_signals_tem = k_signals_tem[padl:-padr] if pad0s > 0 else k_signals_tem
+            k_signals_tem = k_signals_tem[np.sort(np.random.choice(len(k_signals_tem), signale - signalb, replace=False))]
+        k_signals_new[i] = k_signals_tem
+    k_signals = k_signals_new
+
+    
+    qual = np.array([int(x) for x in words[12].split(",")])[kmerb:kmere]
+    mis = np.array([int(x) for x in words[13].split(",")])[kmerb:kmere]
+    ins = np.array([int(x) for x in words[14].split(",")])[kmerb:kmere]
+    dele = np.array([int(x) for x in words[15].split(",")])[kmerb:kmere]
+    try:
+        labels = int(words[16])
+    except IndexError:
+        labels = 0
+    
+    features = np.concatenate((kmers.reshape(-1, len(kmers)), qual.reshape(-1, len(kmers)), 
+                               mis.reshape(-1, len(kmers)), ins.reshape(-1, len(kmers)), 
+                               dele.reshape(-1, len(kmers)), k_signals.transpose()), 
+                               axis=0)
+    return sampleinfo, features, labels
+
+
+class MyDataSetTxt_read_level(Dataset):
+    def __init__(self, filename, seq_len=5, signal_len=65, transform=None):
+        # print(">>>using linecache to access '{}'<<<\n"
+        #       ">>>after done using the file, "
+        #       "remember to use linecache.clearcache() to clear cache for safety<<<".format(filename))
+        self._filename = os.path.abspath(filename)
+        self._total_data = 0
+        self.seq_len=seq_len
+        center_pos = max_seq_len // 2
+        self.kmerb, self.kmere = center_pos - self.seq_len//2, center_pos + self.seq_len//2 + 1
+        center_pos_signal = max_signal_len // 2
+        self.signalb, self.signale = center_pos_signal - signal_len//2, center_pos_signal + signal_len//2 + 1
+        self._transform = transform
+        with open(filename, "r") as f:
+            self._total_data = len(f.readlines())
+
+    def __getitem__(self, idx):
+        line = linecache.getline(self._filename, idx + 1)
+        if line == "":
+            return None
+        else:
+            output = read_level_features_line(line, self.kmerb, self.kmere, self.signalb, self.signale)
+            if self._transform is not None:
+                output = self._transform(output)
+            return output
+
+    def __len__(self):
+        return self._total_data
+
+    def close(self):
         pass

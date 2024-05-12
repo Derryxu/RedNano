@@ -11,7 +11,7 @@ from utils.constants import use_cuda
 device = 'cuda' if use_cuda else 'cpu'
 
 # Creating BiLSTM
-class BiLSTM(nn.Module):
+class BiLSTMtest(nn.Module):
     def __init__(self, input_size, hidden_size, num_layers, dropout_rate=0.5, device=0):
         super(BiLSTM, self).__init__()
         self.hidden_size = hidden_size
@@ -35,7 +35,7 @@ class BiLSTM(nn.Module):
         out = torch.cat((out_fwd_last, out_bwd_last), 1)  #(N, 2*hidden_size)
         return out
 
-class BiLSTMtrain(nn.Module):    # for train
+class BiLSTM(nn.Module):    # for train
     def __init__(self, input_size, hidden_size, num_layers, dropout_rate=0.5, device=0):
         super(BiLSTM, self).__init__()
         self.hidden_size = hidden_size
@@ -79,18 +79,23 @@ class RNN(nn.Module):
 
 # Recurrent neural network with LSTM (many-to-one)
 class RNN_LSTM(nn.Module):
-    def __init__(self, input_size, hidden_size, num_layers, dropout_rate):
+    def __init__(self, input_size, hidden_size, num_layers, dropout_rate=0.5, device=0):
         super(RNN_LSTM, self).__init__()
         self.hidden_size = hidden_size
         self.num_layers = num_layers
-        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, bidirectional=True, batch_first=True, dropout=dropout_rate)
-        #self.fc = nn.Linear(hidden_size * sequence_length, hidden_size)
+        self.device = device
+        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, 
+                            dropout=dropout_rate,
+                            bidirectional=True, batch_first=True)
 
     def forward(self, x):
         self.lstm.flatten_parameters()
         # Set initial hidden and cell states
-        h0 = autograd.Variable(torch.randn(self.num_layers*2, x.size(0), self.hidden_size)).to(device)
-        c0 = autograd.Variable(torch.randn(self.num_layers*2, x.size(0), self.hidden_size)).to(device)
+        h0 = autograd.Variable(torch.randn(self.num_layers * 2, x.size(0), self.hidden_size))
+        c0 = autograd.Variable(torch.randn(self.num_layers * 2, x.size(0), self.hidden_size))
+        if use_cuda:
+            # h0, c0 = h0.cuda(self.device), c0.cuda(self.device)
+            h0, c0 = h0.cuda(), c0.cuda()
 
         # Forward propagate LSTM
         out, _ = self.lstm(x, (h0, c0))  # out: tensor of shape (batch_size, seq_length, hidden_size)

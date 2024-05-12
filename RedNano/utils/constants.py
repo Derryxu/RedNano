@@ -15,3 +15,5 @@ min_cov = 20
 
 max_seq_len = 11
 
+max_signal_len = 65
+

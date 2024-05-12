@@ -1,7 +1,6 @@
 import torch
 from torch import nn
 import torch.nn.functional as F
-import torch.autograd as autograd
 from .util import FlattenLayer
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -10,8 +9,8 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 class Residual(nn.Module):
     def __init__(self, in_channels, out_channels, use_1x1conv=False, stride=1):
         super(Residual, self).__init__()
-        self.conv1 = nn.Conv1d(in_channels, out_channels,  kernel_size=3, padding=1, stride=stride,)
-        self.conv2 = nn.Conv1d(out_channels, out_channels,  kernel_size=3, stride=1, padding=1)
+        self.conv1 = nn.Conv1d(in_channels, out_channels,  kernel_size=3, padding=1, stride=stride)
+        self.conv2 = nn.Conv1d(out_channels, out_channels,  kernel_size=3, padding=1, stride=1)
         if use_1x1conv:
             self.conv3 = nn.Conv1d(in_channels, out_channels, kernel_size=1, stride=stride)
         else:
@@ -50,7 +49,6 @@ class GlobalAvgPool1d(nn.Module):
 
 def resnet18(in_channels=5, out_channels=512):
     net = nn.Sequential(
-        #nn.Conv1d(in_channels, 64, kernel_size=7, stride=2, padding=3),
         nn.Conv1d(in_channels, 64, kernel_size=7, stride=2, padding=3),
         nn.BatchNorm1d(64),
         nn.ReLU(),
@@ -66,10 +64,61 @@ def resnet18(in_channels=5, out_channels=512):
     #net.add_module("fc", nn.Sequential(FlattenLayer(), nn.Linear(512, output)))
     return net
 
+
+def resnet18_2(in_channels=5, out_channels=256):
+    net = nn.Sequential(
+        nn.Conv1d(in_channels, 32, kernel_size=7, stride=2, padding=3),
+        nn.BatchNorm1d(32),
+        nn.ReLU(),
+        nn.MaxPool1d(kernel_size=3, stride=2, padding=1))
+    net.add_module("resnet_block1", resnet_block(32, 32, 2, first_block=True))
+    net.add_module("dropout1",nn.Dropout(p=0.2)) 
+    net.add_module("resnet_block2", resnet_block(32, 64, 2))
+    net.add_module("resnet_block3", resnet_block(64, 128, 2))
+    net.add_module("dropout2",nn.Dropout(p=0.2)) 
+    net.add_module("resnet_block4", resnet_block(128, out_channels, 2))
+    net.add_module("global_avg_pool", GlobalAvgPool1d())
+    return net
+
+
+def resnet18_3(in_channels=5, out_channels=256):
+    net = nn.Sequential(
+        nn.Conv1d(in_channels, 32, kernel_size=3, stride=2, padding=1),
+        nn.BatchNorm1d(32),
+        nn.ReLU(),
+        nn.MaxPool1d(kernel_size=3, stride=2, padding=1))
+    net.add_module("resnet_block1", resnet_block(32, 32, 2, first_block=True))
+    net.add_module("dropout1",nn.Dropout(p=0.2)) 
+    net.add_module("resnet_block2", resnet_block(32, 64, 2))
+    net.add_module("resnet_block3", resnet_block(64, 128, 2))
+    net.add_module("dropout2",nn.Dropout(p=0.2)) 
+    net.add_module("resnet_block4", resnet_block(128, out_channels, 2))
+    net.add_module("global_avg_pool", GlobalAvgPool1d())
+    return net
+
+
 class Resnet(nn.Module):
     def __init__(self, in_channels=5, out_channels=512):
         super(Resnet, self).__init__()
         self.resnet = resnet18(in_channels=in_channels, out_channels=out_channels)
+    def forward(self,x):
+        x = self.resnet(x).view(x.shape[0], -1)
+        return x
+
+
+class Resnet2(nn.Module):
+    def __init__(self, in_channels=5, out_channels=256):
+        super(Resnet2, self).__init__()
+        self.resnet = resnet18_2(in_channels=in_channels, out_channels=out_channels)
+    def forward(self,x):
+        x = self.resnet(x).view(x.shape[0], -1)
+        return x
+
+
+class Resnet3(nn.Module):
+    def __init__(self, in_channels=5, out_channels=256):
+        super(Resnet3, self).__init__()
+        self.resnet = resnet18_3(in_channels=in_channels, out_channels=out_channels)
     def forward(self,x):
         x = self.resnet(x).view(x.shape[0], -1)
         return x
