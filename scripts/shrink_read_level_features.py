@@ -11,7 +11,17 @@ def shrink_file(input_file, output_file, kept_num, min_num, random_seed):
         for line in f:
             words = line.strip().split('\t')
             coverage = int(words[3])
-            if coverage < min_num:
+            if coverage < min_num-coverage:
+                kept_indices = np.random.choice(coverage, min_num-coverage, replace=True)
+                kept_indices.sort()
+                new_line = '\t'.join([words[0], words[1], words[2], str(min_num), words[4]])
+                for i in range(coverage):
+                    new_line += '\t' + words[5 + i]
+                for i in kept_indices:
+                    new_line += '\t' + words[5 + i]
+                new_line += '\t' + words[-1]
+                wf.write(new_line + '\n')
+            elif coverage < min_num:
                 kept_indices = np.random.choice(coverage, min_num-coverage, replace=False)
                 kept_indices.sort()
                 new_line = '\t'.join([words[0], words[1], words[2], str(min_num), words[4]])

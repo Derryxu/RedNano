@@ -32,7 +32,6 @@ def argparser():
     parser.add_argument("--batch_size", default=512, type=int)
     parser.add_argument("--hidden_size", default=128, type=int)
 
-    parser.add_argument("--rnn_n_layers", default=2, type=int)
     parser.add_argument("--seq_lens", default=5, type=int)
     parser.add_argument("--signal_lens", default=65, type=int)
     parser.add_argument("--embedding_size", default=4, type=int)
@@ -94,7 +93,7 @@ def predict(model_path, features_batch_q, pred_str_q, args, device=0):
     print('call_mods process-{} starts'.format(os.getpid()))
     model = ReadLevelModel(args.model_type, 0, args.hidden_size, 
                            args.seq_lens, args.signal_lens, args.embedding_size, 
-                           args.rnn_n_layers, device=device)
+                           device=device)
     
     checkpoint = torch.load(model_path, map_location=torch.device('cpu'))
     try:
