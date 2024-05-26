@@ -161,8 +161,7 @@ awk 'BEGIN{ FS=OFS="\t" } $4>=20 {print $0}' test.features.sort.aggre.tsv > test
 
 ```shell
 
-# --model 
-CUDA_VISIBLE_DEVICES=0 python scripts/predict.py --test_option 0 --test_file test/test.txt --model models/pretrained_allspecies_model_states.pt --seq_lens 5 --signal_lens 65 --batch_size 512 --rnn_hid 128 --hidden_size 512 --dropout_rate 0.5 --embedding_size 4 --output_file_dir test/results/ --num_workers 2
+# using the multi instance learning approach
 CUDA_VISIBLE_DEVICES=0 python scripts/predict.py --input_file test.features.sort.aggre.c20.tsv --model models/mil_allspecies_model_states.pt --num_iterations 1000 --batch_size 1 --signal_lens 65 --hidden_size 128 --embedding_size 4 --seq_lens 5 --model_type comb_basecall_raw --output_file test.features.sort.aggre.c20.results.tsv --nproc 3
 ```
 
