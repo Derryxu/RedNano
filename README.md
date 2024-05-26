@@ -137,6 +137,14 @@ The output feature file consists of one sample per row in the format shown below
 | chrom | pos  | alignstrand | loc_in_ref | readname | strand | k_mer | k_signals_rect | qual | mis  | ins  | dele |
 | ----- | ---- | ----------- | ---------- | -------- | ------ | ----- | -------------- | ---- | ---- | ---- | ---- |
 
+To use the multiple instance learning approach, the read-level features should be aggregated as follows:
+
+```shell
+sort -k1,1 -k2,2n -k5,5 -T./ --parallel=30 -S30G test/features/* > test.features.sort.tsv &
+python /path/to/RedNano/scripts/aggre_features_to_site_level.py --input test.features.sort.tsv --output test.features.sort.aggre.tsv &
+awk 'BEGIN{ FS=OFS="\t" } $4>=20 {print $0}' test.features.sort.aggre.tsv > test.features.sort.aggre.c20.tsv
+```
+
 
 ### Predicting m6A site
 
@@ -149,20 +157,19 @@ The output feature file consists of one sample per row in the format shown below
 * Use `--model` to specify the checkpoint file while training model from checkpoints.
 
 * Check pre-trained models from [/models](/models): 
-  * [_pretrained_allspecies_model_states.pt_](/models/pretrained_allspecies_model_states.pt): Pre-trained RNA DRACH m6A model using sysnthetic, human, and _Arabidopsis_ data.
+  * [_mil_allspecies_model_states.pt_](/models/mil_allspecies_model_states.pt): Pre-trained RNA DRACH m6A model using sysnthetic, human, and _Arabidopsis_ data.
 
 ```shell
 
 # --model 
 CUDA_VISIBLE_DEVICES=0 python scripts/predict.py --test_option 0 --test_file test/test.txt --model models/pretrained_allspecies_model_states.pt --seq_lens 5 --signal_lens 65 --batch_size 512 --rnn_hid 128 --hidden_size 512 --dropout_rate 0.5 --embedding_size 4 --output_file_dir test/results/ --num_workers 2
+CUDA_VISIBLE_DEVICES=0 python scripts/predict.py --input_file test.features.sort.aggre.c20.tsv --model models/mil_allspecies_model_states.pt --num_iterations 1000 --batch_size 1 --signal_lens 65 --hidden_size 128 --embedding_size 4 --seq_lens 5 --model_type comb_basecall_raw --output_file test.features.sort.aggre.c20.results.tsv --nproc 3
 ```
 
-* Output: Modified predicted probability file for the level of readings in the format shown below:
+* Output: Modified probability for each site are in the following format:
 
-| chrom | pos  | alignstrand | loc_in_ref | readname | strand | k_mer | pred |
-| ----- | ---- | ----------- | ---------- | -------- | ------ | ----- | ---- |
-
-* The reads prediction modification probabilities are processed to calculate the predicted probability of genome level
+| transcript | pos | strand | prob | label |
+| ---------- | --- | ------ | ---- | ----- |
 
   
 
@@ -177,5 +184,5 @@ awk -v OFS="\t" '{print $0, 1}' mod_features.txt > mod_features_labeled.txt
 * Use `-test_option` to specify train file(s).
 
 ```shell
-CUDA_VISIBLE_DEVICES=0 python scripts/train.py --train_option 0 --train_file test/train.txt --valid_file test/valid.txt --epochs 50 --patience 5 --signal_lens 65 --batch_size 512 --rnn_hid 128 --hidden_size 512 --dropout_rate 0.5 --clip_grad 0.5 --lr 1e-4 --weight_decay 1e-5 --embedding_size 4 --num_workers 2 --model_type basecall --save_dir test/results/ --seq_lens 5
+CUDA_VISIBLE_DEVICES=0 python scripts/train.py --train_option 0 --train_file test/train.txt --valid_file test/valid.txt --epochs 50 --patience 5 --seq_lens 5 --signal_lens 65 --batch_size 4 --hidden_size 128 --dropout_rate 0.5 --clip_grad 0.5 --lr 1e-4 --weight_decay 1e-5 --embedding_size 4 --num_workers 2 --model_type comb_basecall_raw --save_dir train/
 ```
