@@ -13,7 +13,7 @@ code2base = {0: 'A', 1: 'C', 2: 'G', 3: 'T'}
 
 min_cov = 20
 
-max_seq_len = 11
+max_seq_len = 5
 
 max_signal_len = 65
 
