@@ -323,6 +323,8 @@ def get_kmer_set(features, kmer_len, motif_seqs):
 
 
 def _get_basecall_errors(errors_dir, readname, kmer_len, motif_seqs):
+    if not errors_dir.endswith('/'):
+        errors_dir += '/'
     read_info = errors_dir + readname + '.txt'
     lines = []
     with open(read_info,"rt") as fh:
@@ -392,7 +394,13 @@ def _extract_features(fast5s, corrected_group, basecall_subgroup, normalize_meth
                                           k_mer, signal_means, signal_median, signal_stds, signal_lens,
                                           k_signals_rect, qual, mis, ins, dele])
 
-        except Exception as e:
+        except FileNotFoundError as fnfe:
+            error +=1
+            continue
+        except KeyError as ke:
+            error +=1
+            continue
+        except RuntimeError as re:
             error +=1
             continue
 
@@ -640,7 +648,7 @@ def main():
                            type=str, required=False, default="no",
                            help='if using a dir to save features into multiple files')
     parser.add_argument("--corrected_group", required=False, default='RawGenomeCorrected_001',
-                        help='the corrected_group of fast5 files after ''tombo re-squiggle. default RawGenomeCorrected_000')
+                        help='the corrected_group of fast5 files after ''tombo re-squiggle. default RawGenomeCorrected_001')
     parser.add_argument("--basecall_subgroup", required=False, default='BaseCalled_template',
                         help='the corrected subgroup of fast5 files. default BaseCalled_template')
     parser.add_argument("-n", "--n_process", type=int, required=True, default="2")
