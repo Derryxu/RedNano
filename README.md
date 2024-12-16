@@ -171,6 +171,7 @@ CUDA_VISIBLE_DEVICES=0 python scripts/predict.py --input_file test.features.sort
 | ---------- | --- | ------ | ---- | ----- |
 
   
+**Note**: To run the pipeline of RedNano in nextflow, please check the [RedNano-nf](RedNano-nf) folder.
 
 ### Trainning model
 
